@@ -1,0 +1,8 @@
+Dataset:
+https://www.kaggle.com/datasets/datasnaek/chess?resource=download
+
+Analysis:
+https://data.world/thule179/2016-internet-chess-games
+
+ECO Code:
+https://www.365chess.com/eco.php

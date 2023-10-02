@@ -1,0 +1,238 @@
+---
+title: "ChessDatasetAnalysis"
+author: "Jan Moskal"
+date: "2023-07-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Wczytywanie danych i potrzebnych bibliotek
+```{r}
+dane <- read.csv("games.csv")
+dane0 <- dane
+library(tidyverse)
+library(stringi)
+library(stringr)
+```
+
+### Pobywam się kolumn, które nie będą mi potrzebne: 
+-created_at
+-last_move_at
+-opening_ply
+oraz ujednolicam zapis w rated
+```{r}
+dane <- dane %>% 
+         select(-created_at, -last_move_at, -opening_ply) %>% 
+          mutate(rated = toupper(rated))
+```
+
+### Sprawdzam, które otwarcie zaczynały się od 1. e4 i ile ich jest w stosunku do wszystkich otwarć
+```{r}
+wszystkie_wiersze <- nrow(dane)
+opening1.e4 <- dane %>% 
+                filter(opening_eco == str_extract(opening_eco, "^[B]\\w{2}|^[C]\\w{2}"))
+wiersze_otwarcie1.e4 <- nrow(opening1.e4)
+stosunek_otwarć1.e4_do_wszytskich_otwarć <- wiersze_otwarcie1.e4/wszystkie_wiersze  
+```
+
+### Ile osób wygrało otwarciem polskim (A00)
+```{r}
+otwarcie_polskie_wygrane <- dane %>% 
+                             filter(winner == "white" & opening_eco == "A00") %>% 
+                              count()
+otwarcie_polskie_wygrane
+```
+
+### Rozkład wygranych, przegranych i remisów białych i czarnych
+```{r}
+rozklad_rezultatow_meczu <- dane %>% 
+                             group_by(winner) %>% 
+                              count() %>% 
+                               ggplot(aes(x = winner, y = n, fill = winner)) +
+                                geom_col(fill = c("black", "gray", "white"))+
+                                 labs(y = "Liczba meczy", x = "Rozkład wygranych meczy względem koloru")
+rozklad_rezultatow_meczu 
+```
+
+### Średnia różnica punktów rankingu między graczami
+```{r}
+roznica_punktów_rankingu <- dane %>%
+                             group_by(rated) %>% 
+                              mutate(ranking_difference = abs(white_rating - black_rating)) %>% 
+                               summarise(mean_ranking_difference = mean(ranking_difference))
+roznica_punktów_rankingu
+```
+
+Wniosek: Różnice między rankingami graczy są bardzo duże, w szczególności po podziale na grupy widać, że w towarzyskich spotkaniah roznica jest sporo wieksza niż w tych rankingowych, jednak nawet w rankingowych jest to duża różnica.
+
+
+  #ŹLE(problem z transpozycjami)
+  
+###################################################################################################################
+### Teraz podziele opening_eco na grupy zalezne od rodzaju otwarcia(pierwszego ruchu), będą to:
+1) 1.e4 - te zaczynające się na "B" i "C"
+2) 1.d4 - te zacynające się na "D" i "E" oraz te od "A40" do "A99"
+3) 1.c4 - od "A10" do "A39"
+4) pozostałe (od "A00" do "A09")
+```{r}
+#podział_ze_względu_na_pierwszy_ruch_w_otwarciu <- dane %>%
+ # mutate(first_move = case_when(
+  #  opening_eco %in% str_extract(opening_eco, "B\\w{2}|C\\w{2}") ~ "1.e4",
+   # opening_eco %in% str_extract(opening_eco, "A(1|2|3)\\w{1}") ~ "1.c4",
+    #opening_eco %in% str_extract(opening_eco, "A0\\w{1}") ~ "others",
+    #TRUE ~ "1.d4"))
+#podział_ze_względu_na_pierwszy_ruch_w_otwarciu
+
+
+#wykres_zależności_rezultatu_meczu_od_pierwszego_ruchu
+```
+###################################################################################################################
+
+
+### Korzystając z zapisu wszystkich ruchów, znajdziemy pierwszy po czym pokażemy zależność pierwszego ruchu otwarcia od wygranej
+```{r}
+wykres_zależności_rezultatu_meczu_od_pierwszego_ruchu <- dane %>%
+                                                mutate(first_move = str_extract(moves, "^\\w{2}")) %>%
+                                                 group_by(first_move, winner) %>%
+                                                   summarise(count = n()) %>%
+                                                    filter(count > 90) %>%
+                                                     ggplot(aes(x = winner, y = count, fill = winner)) +
+                                                      geom_bar(stat = "identity") +
+                                                       facet_wrap(~first_move, ncol = 2) +
+                                            labs(x = "Rezultat meczu", y = "Liczba meczy", fill = "Kto wygrał?")
+
+wykres_zależności_rezultatu_meczu_od_pierwszego_ruchu
+```
+
+
+### Sprawdzam najwyższy i najniższy ranking graczy po obu stronach
+```{r}
+gracze_z_najnizszym_rankingiem <- dane %>% 
+                                  filter(white_rating == min(white_rating) | black_rating == min(black_rating))
+gracze_z_najnizszym_rankingiem
+
+gracze_z_najwyzszym_rankingiem <- dane %>% 
+                                  filter(white_rating == max(white_rating) | black_rating == max(black_rating))
+gracze_z_najwyzszym_rankingiem
+                                  
+```
+
+### Sprawdzę, jak wygląda zależność dostawania mata od liczby ruchów w meczu (turns)
+```{r}
+zalezność_mat_od_liczby_ruchów <- dane %>% 
+                                   filter(victory_status == "mate") %>% 
+                                    summarise(mean_turns = format(mean(turns), digits = 1),
+                                              median_turns = median(turns))
+zalezność_mat_od_liczby_ruchów
+```
+
+Wniosek: Oczekiwalem niewysokiej liczby ruchów do mata dlatego, że poziom graczy w bazie nie jest bardzo wysoki
+okazuje się jednak, że srednio potrzeba ok.65 ruchów żeby zamatować przeciwnika.
+Poprawniejszym podejściem byłoby podzielenie meczy lub graczy na poziomy zaawansowania potem wtych grupach przeliczenie tego jeszcze raz
+
+
+
+### Sprawdzam, jak często wygrywa gracz z njwiększą ilością meczy 
+```{r}
+najwiecej_meczy_jako_bialy <- dane %>% 
+                               group_by(white_id) %>% 
+                                count() %>% 
+                                 arrange(desc(n)) %>% 
+                                  ungroup() %>% 
+                                  mutate(number = n, mean_number = mean(number)) %>% 
+                                   filter(number == max(number))
+
+najwiecej_meczy_jako_bialy
+
+ile_meczy_wygral_najczesciej_grajacy_jako_bialy <- dane %>% 
+                                    filter(white_id == "taranga") 
+ile_meczy_zagral <- nrow(ile_meczy_wygral_najczesciej_grajacy_jako_bialy)
+ile_meczy_wygral_najczesciej_grajacy_jako_bialy <- ile_meczy_wygral_najczesciej_grajacy_jako_bialy %>% filter(winner == "white")
+wynik <- nrow(ile_meczy_wygral_najczesciej_grajacy_jako_bialy)/ile_meczy_zagral
+wynik
+                                                    
+```
+
+### Teraz stworze nową kolumne dotyczącą formatu czasowego gry (bullet, blitz, rapid, classic)
+```{r}
+kolumny_pomocnicze <- dane %>% 
+                       mutate(format1 = as.numeric(str_extract(increment_code, "^\\d+")), 
+                              format2 = as.numeric(str_extract(increment_code, "\\d+$"))) 
+                     
+format_czasowy <- kolumny_pomocnicze %>% 
+                   mutate(time_format = case_when(
+                     format1 <= 3 & format2 <= 9 ~ "bullet",
+                     format1 > 3 & format1 <= 9 & format2 <= 9 ~ "blitz",
+                     format1 > 9 & format1 <= 20 & format2 <= 9 ~ "rapid",
+                     format1 > 20 ~ "classic",
+                     format1 <= 3 & format2 > 9 & format2 <= 20 ~ "blitz",
+                     format1 > 3 & format1 <= 9 & format2 > 9 & format2 <= 20 ~ "rapid",
+                     format1 > 9 & format1 <= 20 & format2 > 9  ~ "classic",
+                     format1 <= 3 & format2 > 20 & format2 <= 40 ~ "rapid",
+                     format1 > 3 & format1 <= 9 & format2 > 20  ~ "classic",
+                     format1 <= 3 & format2 > 40 ~ "classic")) %>% 
+                      select(increment_code, time_format)
+
+podział_meczy_względem_formatu_czasowego <- format_czasowy %>% 
+                                             group_by(time_format) %>% 
+                                              ggplot(aes(x = time_format))+
+                                               geom_bar(fill = c(1,2,3,4))+
+                                                labs(x = "Format czasowy", y = "Liczba zagranych meczy")
+                                              
+podział_meczy_względem_formatu_czasowego
+
+```
+### Stworze teraz ramke danych graczy grającymi białymi na podstawie ramki meczy i policze stosunek wygranych do wszytskich meczy dla kazdego gracza
+```{r}
+dane1 <- dane %>% 
+          select(white_id, white_rating, winner) 
+ranking <- dane1 %>% 
+            group_by(white_id) %>% 
+      summarise(winned = sum(winner == "white"), all = n(), win_to_all_ratio = winned/all) %>% 
+              arrange(desc(win_to_all_ratio)) %>% 
+               filter(all > 10)
+ranking
+```
+
+### Stworze ramke danych graczy z ramki danych meczy, a potem policze sredni ranking wszytskich graczy(jeżeli jakiś gracz miał kilka rankingów to biore ich średnią)
+```{r}
+dane2 <- dane %>% 
+          select(white_id, white_rating) %>% 
+           group_by(white_id) %>% 
+            mutate(white_rating = (mean(white_rating))) %>% 
+             ungroup()
+avg_rating <- mean(dane2$white_rating)
+avg_rating
+```
+
+### Podział meczy ze względu na poziom ich graczy, a potem wykres wystepowania meczy danego poziomu 
+```{r}
+dane3 <- dane %>%
+         mutate(avg_player_ranking = abs((white_rating + black_rating)/2)) %>% 
+          mutate(match_level = case_when(
+            avg_player_ranking < 1430 ~ "beginner",
+            avg_player_ranking < 2076 ~ "intermidiate",
+            avg_player_ranking < 2724 ~ "advanced")) %>% 
+             ggplot(aes(x = reorder(match_level, avg_player_ranking))) +
+              geom_bar(fill = c(35, 8, 7))+
+               labs(x = "Poziom meczu", y = "Liczba meczy") 
+dane3
+```
+### Ranking białych graczy pod względem ich rankingu punktowego
+```{r}
+ranking_pozycyjny_graczy_białych <- dane %>% 
+                                     select(white_id, white_rating) %>% 
+                                      group_by(white_id) %>% 
+                                       mutate(white_rating = mean(white_rating)) %>% 
+                                        ungroup() %>% 
+                                        distinct() %>% 
+                                         arrange(desc(white_rating)) %>% 
+                                          mutate(rank = row_number())
+                                         
+ranking_pozycyjny_graczy_białych
+```
+
+
